@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Focus Space - 数字划消</title>
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+    <style>
+        :root {
+            var(--primary): #2D5A5A;
+            --primary: #2D5A5A;
+            --bg: #F0F2F5;
+            --card-white: #FFFFFF;
+            --correct-green: #4CAF50;
+            --error-red: #FF5252;
+            --accent-blue: #E1E8FA;
+            --glow: rgba(45, 90, 90, 0.4);
+            --btn-gray-default: #F1F3F4;
+            --btn-gray-hover: #E1E3E6;
+            --glass-bg: rgba(255, 255, 255, 0.6);
+        }
+
+        .responsive-scaler {
+            display: flex; flex-direction: column; align-items: center;
+            transform-origin: top center; transition: transform 0.3s ease;
+        }
+
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background-color: var(--bg);
+            margin: 0; display: flex; flex-direction: column;
+            align-items: center; min-height: 100vh;
+            user-select: none; overflow: hidden;
+        }
+
+        .nav-controls {
+            position: fixed; top: 15px; left: 15px;
+            display: flex; align-items: center; gap: 8px; z-index: 1000;
+        }
+
+        .icon-btn {
+            position: relative; width: 36px; height: 36px;
+            background: var(--card-white); border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            cursor: pointer; box-shadow: 0 4px 12px rgba(0,0,0,0.06);
+            transition: all 0.3s ease;
+        }
+        .icon-btn svg { width: 18px; height: 18px; }
+        .icon-btn:hover { transform: translateY(-2px); box-shadow: 0 6px 16px rgba(0,0,0,0.1); }
+
+        .tooltip {
+            position: absolute; top: 55px; left: 50%;
+            transform: translateX(-50%) translateY(10px);
+            padding: 6px 12px; font-size: 0.75rem; color: var(--primary);
+            background: var(--glass-bg); backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px); border-radius: 12px;
+            border: 1px solid rgba(255,255,255,0.3);
+            white-space: nowrap; opacity: 0; pointer-events: none;
+            transition: all 0.3s ease; box-shadow: 0 4px 10px rgba(0,0,0,0.05);
+        }
+        .icon-btn:hover .tooltip { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+        .text-back-btn {
+            padding: 6px 12px; background: var(--card-white);
+            border-radius: 20px; font-size: 0.8rem; font-weight: 600;
+            color: var(--primary); cursor: pointer;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.06); transition: all 0.3s ease;
+        }
+        .text-back-btn:hover { background: var(--btn-gray-default); transform: translateY(-2px); }
+
+        @media (min-width: 768px) {
+            .nav-controls { top: 20px; left: 20px; gap: 12px; }
+            .icon-btn { width: 44px; height: 44px; }
+            .icon-btn svg { width: 22px; height: 22px; }
+            .text-back-btn { padding: 8px 16px; font-size: 0.85rem; }
+        }
+
+        .header { margin: 25px 0 10px 0; text-align: center; }
+        .stats-bar { display: flex; justify-content: center; font-weight: 600; color: var(--primary); font-size: 1.1rem; }
+
+        .task-hint {
+            font-size: 1.6rem;
+            font-weight: 700;
+            color: var(--primary);
+            margin: 5px 0 15px 0;
+            display: none; 
+            letter-spacing: 1px;
+        }
+        .task-hint span {
+            color: var(--error-red);
+            font-size: 1.8rem;
+            padding: 0 4px;
+        }
+
+        #game-container {
+            position: relative; width: 480px; height: 580px;
+            background: var(--card-white); border-radius: 40px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.08); overflow: hidden;
+        }
+
+        #game-board { 
+            position: absolute; width: 100%; height: 100%; z-index: 2; 
+            display: flex; justify-content: center; align-items: center;
+        }
+
+        #grid-container {
+            display: grid;
+        }
+
+        .number-cell {
+            background-color: var(--card-white);
+            border: 2px solid var(--accent-blue);
+            border-radius: 12px;
+            display: flex; align-items: center; justify-content: center;
+            font-weight: 700; color: #2D3142;
+            cursor: pointer;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.03);
+            transition: all 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            user-select: none;
+        }
+
+        .number-cell:hover {
+            transform: scale(1.1);
+            border-color: var(--primary);
+            box-shadow: 0 8px 18px var(--glow);
+            z-index: 5;
+        }
+
+        .number-cell.crossed {
+            background-color: var(--btn-gray-default) !important;
+            border-color: var(--btn-gray-hover) !important;
+            color: #A0AAB5 !important;
+            text-decoration: line-through;
+            text-decoration-color: var(--error-red);
+            text-decoration-thickness: 3px;
+            pointer-events: none;
+            transform: scale(1) !important;
+            box-shadow: none !important;
+            z-index: 1;
+        }
+
+        .error-shake { 
+            background-color: var(--error-red) !important; 
+            color: white !important;
+            animation: sublte-shake 0.25s cubic-bezier(.36,.07,.19,.97) infinite !important;
+        }
+
+        @keyframes sublte-shake {
+            0% { transform: translate(0, 0); }
+            10% { transform: translate(-5px, -1px); }
+            20% { transform: translate(5px, 1px); }
+            30% { transform: translate(-5px, 1px); }
+            40% { transform: translate(5px, -1px); }
+            50% { transform: translate(-5px, 0); }
+            100% { transform: translate(0, 0); }
+        }
+
+        .overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(255,255,255,0.92); backdrop-filter: blur(12px); z-index: 100; display: flex; flex-direction: column; justify-content: center; align-items: center; }
+        .diff-card { background: white; padding: 20px; margin: 8px; border-radius: 20px; width: 260px; text-align: center; cursor: pointer; box-shadow: 0 8px 20px rgba(0,0,0,0.04); transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); border: 2px solid transparent; }
+        .diff-card:hover { transform: translateY(-5px) scale(1.02); border-color: var(--primary); box-shadow: 0 15px 35px rgba(0,0,0,0.1); }
+        
+        .btn-action { width: 220px; height: 50px; border-radius: 25px; border: none; font-weight: 700; cursor: pointer; font-size: 1rem; transition: all 0.3s ease; display: flex; align-items: center; justify-content: center; margin: 0 auto; }
+        
+        .modal-wrap { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.4); display: none; justify-content: center; align-items: center; z-index: 200; }
+        .modal { background: white; padding: 40px; border-radius: 35px; text-align: center; box-shadow: 0 35px 80px rgba(0,0,0,0.25); min-width: 320px; }
+        
+        .modal-buttons-group { display: flex; flex-direction: column; align-items: center; gap: 12px; margin-top: 10px; }
+        .modal-btn-dark { background: var(--primary); color: white; }
+        .modal-btn-dark:hover { filter: brightness(1.1); transform: scale(1.02); }
+        .modal-btn-light { background: var(--btn-gray-default); color: #5F6368; }
+        .modal-btn-light:hover { background-color: var(--btn-gray-hover); transform: scale(1.02); }
+
+        .best-score-label { font-size: 0.9rem; color: #888; margin-top: 4px; }
+    </style>
+</head>
+<body>
+
+    <div class="nav-controls">
+        <div class="icon-btn" onclick="goToHome()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+                <polyline points="9 22 9 12 15 12 15 22"></polyline>
+            </svg>
+            <div class="tooltip">返回大厅</div>
+        </div>
+        <div id="back-button" class="text-back-btn" onclick="backToDifficulty()" style="display: none;">返回</div>
+    </div>
+
+    <div class="header">
+        <h2 style="color: var(--primary); margin: 0;">数字划消</h2>
+        <div id="task-hint" class="task-hint">
+            划掉所有带 <span id="target-digit-display">X</span> 的数字
+        </div>
+        <div class="stats-bar" id="stats-area" style="visibility: hidden;">
+            <div id="timer-display">用时：0.0s</div>
+        </div>
+    </div>
+
+    <div class="responsive-scaler" id="scaler">
+        <div id="game-container">
+            <div id="game-board">
+                <div id="grid-container"></div>
+            </div>
+
+            <div id="overlay-difficulty" class="overlay">
+                <h3 style="color: var(--primary); margin-bottom: 20px;">选择难度</h3>
+                <div class="diff-card" onclick="selectDifficulty('simple')">
+                    <div style="font-weight:700; font-size: 1.1rem;">简单</div>
+                    <div style="font-size:0.85rem; color:#888; margin-top:5px;">20个数字 基础干扰过滤</div>
+                </div>
+                <div class="diff-card" onclick="selectDifficulty('advanced')">
+                    <div style="font-weight:700; font-size: 1.1rem;">进阶</div>
+                    <div style="font-size:0.85rem; color:#888; margin-top:5px;">50个数字 深度注意维持</div>
+                </div>
+                <div class="diff-card" onclick="selectDifficulty('hard')">
+                    <div style="font-weight:700; font-size: 1.1rem;">困难</div>
+                    <div style="font-size:0.85rem; color:#888; margin-top:5px;">100个数字 高压特征筛选</div>
+                </div>
+            </div>
+
+            <div id="overlay-start" class="overlay" style="display: none;">
+                <button class="btn-action modal-btn-dark" onclick="startGame()">START</button>
+                <p id="start-hint" style="color: #999; font-size: 0.9rem; margin-top: 20px;">快速找准目标数字并划掉</p>
+            </div>
+        </div>
+    </div>
+
+    <div id="modal-wrap" class="modal-wrap">
+        <div class="modal">
+            <h2 style="color: var(--primary)">🎉 完成</h2>
+            <div style="margin: 20px 0;">
+                <div id="final-result" style="font-size: 1.5rem; font-weight: 700; color: #2D3142;"></div>
+                <div id="best-record-display" class="best-score-label">最佳纪录: --</div>
+            </div>
+            <div class="modal-buttons-group">
+                <button class="btn-action modal-btn-dark" onclick="restartCurrent()">再来一次</button>
+                <button id="next-level-btn" class="btn-action modal-btn-dark" onclick="goNextLevel()">挑战更高难度</button>
+                <button class="btn-action modal-btn-light" onclick="goToHome()">退出到首页</button>
+            </div>
+        </div>
+    </div>
+
+<script>
+    // --- 音频初始化 ---
+    const clickSound = new Audio('assets/click.MP3');
+    const successSound = new Audio('assets/success.MP3');
+    clickSound.load(); 
+    successSound.load(); 
+
+    function adjustScale() {
+        const scaler = document.getElementById('scaler');
+        if (!scaler) return;
+        const screenWidth = window.innerWidth;
+        if (screenWidth < 560) {
+            const ratio = (screenWidth * 0.9) / 560;
+            scaler.style.transform = `scale(${ratio})`;
+        } else {
+            scaler.style.transform = `scale(1)`;
+        }
+    }
+    window.addEventListener('resize', adjustScale);
+
+    const gridContainer = document.getElementById('grid-container');
+    const timerDisplay = document.getElementById('timer-display');
+    const taskHint = document.getElementById('task-hint');
+
+    let currentDifficulty = 'simple';
+    let targetDigit = 0;
+    let totalTargets = 0;
+    let foundTargets = 0;
+    let startTime, timerInterval;
+    
+    const config = {
+        'simple': { total: 20, cols: 5, rows: 4, size: '70px', gap: '12px', font: '1.6rem', next: 'advanced', label: '进阶' },
+        'advanced': { total: 50, cols: 5, rows: 10, size: '48px', gap: '8px', font: '1.2rem', next: 'hard', label: '困难' },
+        'hard': { total: 100, cols: 10, rows: 10, size: '38px', gap: '6px', font: '1rem', next: null, label: '' }
+    };
+
+    function goToHome() {
+        clearInterval(timerInterval);
+        window.location.href = 'index.html';
+    }
+
+    function selectDifficulty(mode) {
+        currentDifficulty = mode;
+        document.getElementById('overlay-difficulty').style.display = 'none';
+        document.getElementById('overlay-start').style.display = 'flex';
+        document.getElementById('back-button').style.display = 'flex';
+        initBoard();
+        adjustScale();
+    }
+
+    function initBoard() {
+        gridContainer.innerHTML = '';
+        foundTargets = 0;
+        totalTargets = 0;
+        
+        targetDigit = Math.floor(Math.random() * 9) + 1;
+        document.getElementById('target-digit-display').textContent = targetDigit;
+        document.getElementById('start-hint').innerHTML = `目标：找出所有带 <strong style="color:var(--error-red);">${targetDigit}</strong> 的数字`;
+
+        const setup = config[currentDifficulty];
+        
+        gridContainer.style.gridTemplateColumns = `repeat(${setup.cols}, ${setup.size})`;
+        gridContainer.style.gridTemplateRows = `repeat(${setup.rows}, ${setup.size})`;
+        gridContainer.style.gap = setup.gap;
+
+        let numbers = generateNumbers(setup.total, targetDigit);
+
+        numbers.forEach(num => {
+            const isTarget = num.toString().includes(targetDigit.toString());
+            if (isTarget) totalTargets++;
+
+            const cell = document.createElement('div');
+            cell.className = 'number-cell';
+            cell.style.fontSize = setup.font;
+            cell.textContent = num;
+            
+            cell.onmousedown = () => {
+                if (isTarget && !cell.classList.contains('crossed')) {
+                    // --- 播放点击音效 ---
+                    clickSound.currentTime = 0; 
+                    clickSound.play().catch(e => console.log("音频受阻:", e));
+
+                    cell.classList.add('crossed');
+                    foundTargets++;
+                    if (foundTargets === totalTargets) {
+                        endGame();
+                    }
+                } else if (!isTarget) {
+                    cell.classList.add('error-shake');
+                    setTimeout(() => cell.classList.remove('error-shake'), 400);
+                }
+            };
+            gridContainer.appendChild(cell);
+        });
+    }
+
+    function generateNumbers(totalCount, targetStr) {
+        let nums = [];
+        let minTargets = Math.max(3, Math.floor(totalCount * 0.2)); 
+        
+        for (let i = 0; i < totalCount; i++) {
+            if (i < minTargets) {
+                let num;
+                do { num = Math.floor(Math.random() * 99) + 1; } 
+                while (!num.toString().includes(targetStr.toString()));
+                nums.push(num);
+            } else {
+                let num;
+                do { num = Math.floor(Math.random() * 99) + 1; } 
+                while (num.toString().includes(targetStr.toString()));
+                nums.push(num);
+            }
+        }
+        return nums.sort(() => Math.random() - 0.5);
+    }
+
+    function startGame() {
+        document.getElementById('overlay-start').style.display = 'none';
+        document.getElementById('stats-area').style.visibility = 'visible';
+        taskHint.style.display = 'block'; 
+        
+        startTime = Date.now();
+        timerInterval = setInterval(() => {
+            timerDisplay.textContent = `用时：${((Date.now() - startTime)/1000).toFixed(1)}s`;
+        }, 100);
+        adjustScale();
+    }
+
+    function endGame() {
+        clearInterval(timerInterval);
+        
+        // --- 播放成功音效 ---
+        successSound.currentTime = 0;
+        successSound.play().catch(e => console.log("音频受阻:", e));
+
+        const finalTime = (Date.now() - startTime) / 1000;
+        const recordKey = `best_record_cancel_${currentDifficulty}`;
+        let bestRecord = localStorage.getItem(recordKey);
+        let isNewRecord = false;
+        
+        if (!bestRecord || finalTime < parseFloat(bestRecord)) {
+            localStorage.setItem(recordKey, finalTime.toFixed(2));
+            bestRecord = finalTime.toFixed(2);
+            isNewRecord = true;
+        }
+        
+        confetti({ particleCount: 200, spread: 80, origin: { y: 0.6 } });
+        
+        setTimeout(() => {
+            document.getElementById('modal-wrap').style.display = 'flex';
+            document.getElementById('final-result').textContent = `${finalTime.toFixed(2)}s`;
+            document.getElementById('best-record-display').textContent = isNewRecord ? `✨ 新纪录！最佳: ${bestRecord}s` : `最佳纪录: ${bestRecord}s`;
+            
+            const nextInfo = config[currentDifficulty];
+            const nextBtn = document.getElementById('next-level-btn');
+            if (nextInfo.next) {
+                nextBtn.style.display = 'flex';
+                nextBtn.textContent = `挑战${nextInfo.label}模式`;
+            } else {
+                nextBtn.style.display = 'none';
+            }
+        }, 600);
+    }
+
+    function restartCurrent() {
+        document.getElementById('modal-wrap').style.display = 'none';
+        taskHint.style.display = 'none';
+        selectDifficulty(currentDifficulty);
+    }
+
+    function goNextLevel() {
+        const next = config[currentDifficulty].next;
+        document.getElementById('modal-wrap').style.display = 'none';
+        taskHint.style.display = 'none';
+        selectDifficulty(next);
+    }
+
+    function backToDifficulty() {
+        clearInterval(timerInterval); 
+        document.getElementById('modal-wrap').style.display = 'none';
+        document.getElementById('overlay-start').style.display = 'none'; 
+        document.getElementById('overlay-difficulty').style.display = 'flex';
+        document.getElementById('stats-area').style.visibility = 'hidden';
+        taskHint.style.display = 'none';
+        
+        timerDisplay.textContent = `用时：0.0s`;
+        gridContainer.innerHTML = ''; 
+        document.getElementById('back-button').style.display = 'none';
+    }
+
+    window.addEventListener('load', adjustScale);
+</script>
+</body>
+</html>
