@@ -1,0 +1,571 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Focus Space - 数字连线</title>
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+    <style>
+        :root {
+            --primary: #2D5A5A;
+            --bg: #E8ECEF;
+            --card-white: #FFFFFF;
+            --correct-green: #4CAF50;
+            --error-red: #FF5252;
+            --btn-gray-default: #F1F3F4;
+            --btn-gray-hover: #E1E3E6;
+            --glass-bg: rgba(255, 255, 255, 0.7);
+        }
+
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background-color: var(--bg);
+            margin: 0; display: flex; flex-direction: column;
+            align-items: center; min-height: 100vh;
+            user-select: none; overflow-x: hidden;
+            padding: 40px 0;
+        }
+
+        /* --- 导航控制区 (加入了媒体查询) --- */
+        .nav-controls {
+            position: fixed; display: flex; align-items: center; z-index: 1000;
+        }
+
+        .icon-btn {
+            position: relative; background: var(--card-white); border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            cursor: pointer; box-shadow: 0 4px 12px rgba(0,0,0,0.06);
+            transition: all 0.3s ease;
+        }
+        .icon-btn:hover { transform: translateY(-2px); box-shadow: 0 6px 16px rgba(0,0,0,0.1); }
+
+        .text-back-btn {
+            background: var(--card-white); border-radius: 20px; font-weight: 600;
+            color: var(--primary); cursor: pointer;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.06); transition: all 0.3s ease;
+        }
+        .text-back-btn:hover { background: var(--btn-gray-default); transform: translateY(-2px); }
+
+        /* 媒体查询：移动端更紧凑 */
+        @media (max-width: 767px) {
+            .nav-controls { top: 15px; left: 15px; gap: 8px; }
+            .icon-btn { width: 36px; height: 36px; }
+            .icon-btn svg { width: 18px; height: 18px; }
+            .text-back-btn { padding: 6px 12px; font-size: 0.8rem; }
+        }
+        /* 媒体查询：大屏恢复大小 */
+        @media (min-width: 768px) {
+            .nav-controls { top: 20px; left: 20px; gap: 12px; }
+            .icon-btn { width: 44px; height: 44px; }
+            .icon-btn svg { width: 22px; height: 22px; }
+            .text-back-btn { padding: 8px 16px; font-size: 0.85rem; }
+        }
+
+        /* --- 页面切换架构 (同步数字捕手难度UI) --- */
+        #difficulty-page {
+            display: flex; flex-direction: column; align-items: center;
+            padding-top: 60px; width: 100%;
+        }
+        .diff-title { color: var(--primary); margin-bottom: 20px; font-size: 1.5rem; font-weight: 800; letter-spacing: 1px; }
+        .diff-container { display: flex; flex-direction: column; gap: 0; }
+        
+        /* 完美复刻数字捕手的卡片样式 */
+        .diff-card { 
+            background: white; padding: 20px; margin: 8px; border-radius: 20px; width: 260px; 
+            text-align: center; cursor: pointer; box-shadow: 0 8px 20px rgba(0,0,0,0.04); 
+            transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); border: 2px solid transparent; 
+        }
+        .diff-card:hover { transform: translateY(-5px) scale(1.02); border-color: var(--primary); box-shadow: 0 15px 35px rgba(0,0,0,0.1); }
+
+        #game-page { display: none; flex-direction: column; align-items: center; width: 100%; }
+
+        /* --- 缩放魔法 --- */
+        .responsive-scaler {
+            display: flex; flex-direction: column; align-items: center;
+            transform-origin: top center; transition: transform 0.3s ease;
+        }
+
+        /* --- 半透明统合大卡片 --- */
+        .main-card {
+            background: var(--glass-bg);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border-radius: 32px; padding: 30px 40px;
+            box-shadow: 0 16px 48px rgba(0,0,0,0.08);
+            display: flex; flex-direction: column; align-items: center;
+            border: 1px solid rgba(255, 255, 255, 0.5);
+            width: 480px; box-sizing: border-box;
+        }
+
+        /* --- 顶部信息区 --- */
+        .header { text-align: center; margin-bottom: 15px; }
+        .header h2 { margin: 0 0 5px 0; color: var(--primary); font-size: 1.6rem; }
+        .header-hint { color: #666; font-size: 0.9rem; font-weight: 500; letter-spacing: 1px; }
+        .stats-bar { font-weight: 600; color: var(--primary); font-size: 1.1rem; margin-top: 5px; }
+
+        /* --- 图例区 --- */
+        #legend-container {
+            display: grid; background: #D1D5DB; gap: 1px; 
+            border: 2px solid #D1D5DB; border-radius: 12px;
+            overflow: hidden; margin-bottom: 20px; visibility: hidden; width: 100%;
+        }
+        .legend-item { 
+            display: flex; flex-direction: column; align-items: center; gap: 4px; 
+            background: var(--card-white); padding: 8px 0;
+        }
+        .legend-num { font-size: 1.05rem; font-weight: 900; color: #222; }
+        .legend-color { width: 22px; height: 22px; border-radius: 4px; box-shadow: inset 0 2px 4px rgba(0,0,0,0.05); }
+
+        /* --- 游戏主区域 --- */
+        #game-container {
+            position: relative; width: 400px; height: 400px;
+            border-radius: 50%; background: rgba(255, 255, 255, 0.45); 
+            box-shadow: inset 0 4px 15px rgba(0,0,0,0.06), 0 4px 20px rgba(0,0,0,0.04);
+            border: 2px solid rgba(255,255,255,0.9); overflow: hidden; margin-top: 10px;
+        }
+
+        #game-board { position: absolute; width: 100%; height: 100%; z-index: 2; }
+        #line-svg { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; pointer-events: none; }
+
+        .dot {
+            position: absolute; width: 42px; height: 42px; border-radius: 50%;
+            cursor: pointer; z-index: 10; transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1); display: flex; align-items: center; justify-content: center;
+        }
+        .dot:hover { transform: scale(1.15); }
+        .dot.connected { transform: scale(0.9); opacity: 0.8; }
+
+        .error-shake { animation: sublte-shake 0.25s cubic-bezier(.36,.07,.19,.97) infinite !important; }
+        @keyframes sublte-shake {
+            0% { transform: translate(0, 0); }
+            10% { transform: translate(-5px, -1px); }
+            20% { transform: translate(5px, 1px); }
+            30% { transform: translate(-5px, 1px); }
+            40% { transform: translate(5px, -1px); }
+            50% { transform: translate(-5px, 0); }
+            100% { transform: translate(0, 0); }
+        }
+
+        /* --- 底部序列区 (修改：移除网格布局，适配flex居中) --- */
+        #sequence-bar {
+            margin-top: 20px; padding: 12px 15px;
+            background: rgba(255, 255, 255, 0.8);
+            border-radius: 20px;
+            font-size: 1.15rem; font-weight: 700; color: #2D3142;
+            visibility: hidden; width: 100%;
+            border: 1px solid rgba(255,255,255,0.4);
+            min-height: 30px;
+            overflow-y: auto;
+            box-sizing: border-box;
+        }
+
+        /* 美化滚动条 */
+        #sequence-bar::-webkit-scrollbar { width: 6px; }
+        #sequence-bar::-webkit-scrollbar-thumb { background: rgba(45, 90, 90, 0.2); border-radius: 3px; }
+
+        .seq-highlight { color: var(--correct-green); }
+
+        /* --- 弹窗与遮罩 --- */
+        .overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(255,255,255,0.85); backdrop-filter: blur(8px); z-index: 100; display: flex; flex-direction: column; justify-content: center; align-items: center; border-radius: 50%; }
+        .btn-action { width: 220px; height: 50px; border-radius: 25px; border: none; font-weight: 700; cursor: pointer; font-size: 1rem; transition: all 0.3s ease; display: flex; align-items: center; justify-content: center; margin: 0 auto; }
+        
+        .modal-wrap { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.4); display: none; justify-content: center; align-items: center; z-index: 200; }
+        .modal { background: white; padding: 40px; border-radius: 35px; text-align: center; box-shadow: 0 35px 80px rgba(0,0,0,0.25); min-width: 320px; }
+        .modal-buttons-group { display: flex; flex-direction: column; align-items: center; gap: 12px; margin-top: 10px; }
+        .modal-btn-dark { background: var(--primary); color: white; }
+        .modal-btn-dark:hover { filter: brightness(1.1); transform: scale(1.02); }
+        .modal-btn-light { background: var(--btn-gray-default); color: #5F6368; }
+        .modal-btn-light:hover { background-color: var(--btn-gray-hover); transform: scale(1.02); }
+        .best-score-label { font-size: 0.9rem; color: #888; margin-top: 4px; }
+    </style>
+</head>
+<body>
+
+    <div class="nav-controls">
+        <div class="icon-btn" onclick="goToHome()">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+                <polyline points="9 22 9 12 15 12 15 22"></polyline>
+            </svg>
+        </div>
+        <div id="back-btn" class="text-back-btn" style="display: none;" onclick="backToDifficulty()">返回</div>
+    </div>
+
+    <div id="difficulty-page">
+        <h3 class="diff-title">选择难度</h3>
+        <div class="diff-container">
+            <div class="diff-card" onclick="selectDifficulty('simple')">
+                <div style="font-weight:700; font-size: 1.1rem;">简单</div>
+                <div style="font-size:0.85rem; color:#888; margin-top:5px;">6色连线 - 新手适应</div>
+            </div>
+            <div class="diff-card" onclick="selectDifficulty('advanced')">
+                <div style="font-weight:700; font-size: 1.1rem;">进阶</div>
+                <div style="font-size:0.85rem; color:#888; margin-top:5px;">10色连线 - 记忆进阶</div>
+            </div>
+            <div class="diff-card" onclick="selectDifficulty('hard')">
+                <div style="font-weight:700; font-size: 1.1rem;">困难</div>
+                <div style="font-size:0.85rem; color:#888; margin-top:5px;">12色连线 - G特别版</div>
+            </div>
+        </div>
+    </div>
+
+    <div id="game-page">
+        <div class="responsive-scaler" id="scaler">
+            <div class="main-card">
+                <div class="header">
+                    <h2>数字连线</h2>
+                    <div id="game-hint" class="header-hint" style="visibility: hidden;">按底部数字顺序，连接对应颜色的圆点</div>
+                    <div class="stats-bar" id="stats-area" style="visibility: hidden;">
+                        <div id="timer-display">用时：0.0s</div>
+                    </div>
+                </div>
+
+                <div id="legend-container"></div>
+
+                <div id="game-container">
+                    <svg id="line-svg">
+                        <g id="lines-group"></g>
+                    </svg>
+                    
+                    <div id="game-board"></div>
+
+                    <div id="overlay-start" class="overlay" style="display: none;">
+                        <button class="btn-action modal-btn-dark" onclick="startGame()">START</button>
+                    </div>
+                </div>
+
+                <div id="sequence-bar"></div>
+            </div>
+        </div>
+    </div>
+
+    <div id="modal-wrap" class="modal-wrap">
+        <div class="modal">
+            <h2 style="color: var(--primary)">🎉 完成</h2>
+            <div style="margin: 20px 0;">
+                <div id="final-result" style="font-size: 1.5rem; font-weight: 700; color: #2D3142;"></div>
+                <div id="best-record-display" class="best-score-label">最佳纪录: --</div>
+            </div>
+            <!-- 按你要求修改后的按钮 -->
+            <div class="modal-buttons-group">
+                <button class="btn-action modal-btn-dark" onclick="restartCurrent()">再练一次</button>
+                <button id="next-level-btn" class="btn-action modal-btn-dark" onclick="goNextLevel()">挑战下一关</button>
+                <button class="btn-action modal-btn-light" onclick="goToHome()">返回首页</button>
+            </div>
+        </div>
+    </div>
+
+<script>
+    // --- 修复：路径改成assets/开头，匹配你的文件夹结构 ---
+    let clickSound, successSound;
+    const clickSoundUrl = 'assets/click.MP3';
+    const successSoundUrl = 'assets/success.MP3';
+
+    // 在用户首次交互时初始化音频（解决浏览器音频策略）
+    function initAudio() {
+        if (clickSound) return;
+        clickSound = new Audio(clickSoundUrl);
+        successSound = new Audio(successSoundUrl);
+        clickSound.load();
+        successSound.load();
+        clickSound.volume = 0.5;
+        successSound.volume = 0.7;
+    }
+
+    // 通用播放函数
+    function playSound(audio) {
+        if (!audio) return;
+        try {
+            audio.currentTime = 0;
+            audio.play().catch(err => {
+                initAudio();
+                audio.currentTime = 0;
+                audio.play().catch(e => console.log("音效播放失败：", e));
+            });
+        } catch (e) {
+            console.log("播放音效出错：", e);
+        }
+    }
+
+    const colorPalette = [
+        '#FF5252', '#448AFF', '#4CAF50', '#FFC107', '#E040FB', '#00BCD4', 
+        '#FF9800', '#8BC34A', '#795548', '#9E9E9E', '#673AB7', '#E91E63'
+    ];
+
+    const config = {
+        'simple': { colorCount: 6, seqLength: 8, next: 'advanced', label: '进阶' },
+        'advanced': { colorCount: 10, seqLength: 12, next: 'hard', label: '困难' },
+        'hard': { colorCount: 12, seqLength: 18, next: null, label: '' }
+    };
+
+    const board = document.getElementById('game-board');
+    const linesGroup = document.getElementById('lines-group');
+    const legendContainer = document.getElementById('legend-container');
+    const sequenceBar = document.getElementById('sequence-bar');
+    const timerDisplay = document.getElementById('timer-display');
+    const gameHint = document.getElementById('game-hint');
+
+    let currentDifficulty = 'simple';
+    let targetSequence = []; 
+    let currentIndex = 0;
+    let dotPositions = []; 
+    let startTime, timerInterval;
+
+    // --- 移动端缩放魔法 ---
+    function adjustScale() {
+        const scaler = document.getElementById('scaler');
+        const screenWidth = window.innerWidth;
+        if (screenWidth < 520) {
+            const ratio = (screenWidth * 0.9) / 480; 
+            scaler.style.transform = `scale(${ratio})`;
+        } else {
+            scaler.style.transform = `scale(1)`;
+        }
+    }
+    window.addEventListener('resize', adjustScale);
+
+    // 1. 按你要求修改的首页跳转函数
+    function goToHome() {
+        window.location.href = 'index.html';
+    }
+
+    function selectDifficulty(mode) {
+        initAudio();
+        currentDifficulty = mode;
+        document.getElementById('difficulty-page').style.display = 'none';
+        document.getElementById('game-page').style.display = 'flex';
+        document.getElementById('back-btn').style.display = 'flex';
+        
+        document.getElementById('overlay-start').style.display = 'flex';
+        adjustScale(); 
+        initGame();
+    }
+
+    function initGame() {
+        board.innerHTML = '';
+        legendContainer.innerHTML = '';
+        linesGroup.innerHTML = ''; 
+        currentIndex = 0;
+        dotPositions = [];
+        
+        const settings = config[currentDifficulty];
+        
+        legendContainer.style.gridTemplateColumns = settings.colorCount === 10 ? 'repeat(5, 1fr)' : 'repeat(6, 1fr)';
+
+        for (let i = 0; i < settings.colorCount; i++) {
+            const item = document.createElement('div');
+            item.className = 'legend-item';
+            item.innerHTML = `
+                <div class="legend-num">${i + 1}</div>
+                <div class="legend-color" style="background: ${colorPalette[i]};"></div>
+            `;
+            legendContainer.appendChild(item);
+        }
+
+        const radius = 140; 
+        const centerX = 200;
+        const centerY = 200;
+        
+        for (let i = 0; i < settings.colorCount; i++) {
+            const angle = (i / settings.colorCount) * 2 * Math.PI - Math.PI / 2;
+            const x = centerX + radius * Math.cos(angle) - 21;
+            const y = centerY + radius * Math.sin(angle) - 21;
+            
+            dotPositions.push({ id: i + 1, cx: x + 21, cy: y + 21, color: colorPalette[i] });
+
+            const dotEl = document.createElement('div');
+            dotEl.className = 'dot';
+            dotEl.style.left = `${x}px`;
+            dotEl.style.top = `${y}px`;
+            dotEl.style.backgroundColor = colorPalette[i];
+            
+            dotEl.onmousedown = () => handleDotClick(dotEl, i + 1);
+            board.appendChild(dotEl);
+        }
+
+        targetSequence = [];
+        let baseColors = Array.from({length: settings.colorCount}, (_, i) => i + 1);
+        for (let i = baseColors.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [baseColors[i], baseColors[j]] = [baseColors[j], baseColors[i]];
+        }
+        targetSequence = [...baseColors];
+
+        while (targetSequence.length < settings.seqLength) {
+            let nextNum;
+            let isValid = false;
+            while (!isValid) {
+                nextNum = Math.floor(Math.random() * settings.colorCount) + 1;
+                let currentLen = targetSequence.length;
+                let isAA = (nextNum === targetSequence[currentLen - 1]);
+                let isABA = (currentLen >= 2 && nextNum === targetSequence[currentLen - 2]);
+                if (!isAA && !isABA) { isValid = true; }
+            }
+            targetSequence.push(nextNum);
+        }
+
+        updateSequenceDisplay();
+    }
+
+    // ==============================================
+    // 【核心修改】底部数字序列渲染：-连接 + 居中 + 自动换行
+    // ==============================================
+    function updateSequenceDisplay() {
+        // 处理数字高亮效果
+        const numberParts = targetSequence.map((num, index) => {
+            return index < currentIndex 
+                ? `<span class="seq-highlight">${num}</span>` 
+                : `<span>${num}</span>`;
+        });
+        
+        // 用 - 连接所有数字
+        sequenceBar.innerHTML = numberParts.join('<span style="margin:0 5px; color:#666;">-</span>');
+        
+        // 强制居中样式 + 自动换行
+        sequenceBar.style.display = "flex";
+        sequenceBar.style.justifyContent = "center";
+        sequenceBar.style.flexWrap = "wrap";
+        sequenceBar.style.alignItems = "center";
+        sequenceBar.style.gap = "2px 8px";
+    }
+
+    function updateLinesVisuals() {
+        const allLines = linesGroup.querySelectorAll('line');
+        const totalLines = allLines.length;
+        
+        allLines.forEach((line, index) => {
+            const age = totalLines - index - 1; 
+            line.style.transition = "opacity 0.3s ease";
+            
+            if (age === 0) {
+                line.style.opacity = "1";
+            } else if (age === 1) {
+                line.style.opacity = "0.5";
+            } else if (age === 2) {
+                line.style.opacity = "0.2";
+            } else {
+                line.style.opacity = "0.05"; 
+            }
+        });
+    }
+
+    function handleDotClick(dotEl, dotId) {
+        if (currentIndex >= targetSequence.length) return;
+
+        if (dotId === targetSequence[currentIndex]) {
+            playSound(clickSound);
+
+            dotEl.classList.add('connected');
+            setTimeout(() => dotEl.classList.remove('connected'), 300);
+
+            if (currentIndex > 0) {
+                const prevDotId = targetSequence[currentIndex - 1];
+                const prevPos = dotPositions.find(p => p.id === prevDotId);
+                const currPos = dotPositions.find(p => p.id === dotId);
+
+                const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+                line.setAttribute("x1", prevPos.cx);
+                line.setAttribute("y1", prevPos.cy);
+                line.setAttribute("x2", currPos.cx);
+                line.setAttribute("y2", currPos.cy);
+                line.setAttribute("stroke", "#2D5A5A");
+                line.setAttribute("stroke-width", "4");
+                line.setAttribute("stroke-linecap", "round");
+                linesGroup.appendChild(line);
+                
+                updateLinesVisuals();
+            }
+
+            currentIndex++;
+            updateSequenceDisplay();
+
+            if (currentIndex >= targetSequence.length) {
+                endGame();
+            }
+        } else {
+            dotEl.classList.add('error-shake');
+            setTimeout(() => dotEl.classList.remove('error-shake'), 400);
+        }
+    }
+
+    function startGame() {
+        initAudio();
+        document.getElementById('overlay-start').style.display = 'none';
+        document.getElementById('stats-area').style.visibility = 'visible';
+        gameHint.style.visibility = 'visible'; 
+        legendContainer.style.visibility = 'visible';
+        sequenceBar.style.visibility = 'visible';
+        
+        startTime = Date.now();
+        timerInterval = setInterval(() => {
+            timerDisplay.textContent = `用时：${((Date.now() - startTime)/1000).toFixed(1)}s`;
+        }, 100);
+    }
+
+    // 2. 按你要求替换的通关逻辑
+    function endGame() {
+        clearInterval(timerInterval);
+        const finalTime = (Date.now() - startTime) / 1000;
+        
+        playSound(successSound);
+
+        let isNewRecord = false;
+        let bestRecord = localStorage.getItem(`best_link_${currentDifficulty}`);
+        if (!bestRecord || finalTime < parseFloat(bestRecord)) {
+            localStorage.setItem(`best_link_${currentDifficulty}`, finalTime.toFixed(1));
+            bestRecord = finalTime.toFixed(1);
+            isNewRecord = true;
+        }
+
+        confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 } });
+
+        setTimeout(() => {
+            document.getElementById('modal-wrap').style.display = 'flex';
+            document.getElementById('final-result').textContent = `${finalTime.toFixed(1)}s`;
+            document.getElementById('best-record-display').textContent = isNewRecord ? `✨ 新纪录！最佳: ${bestRecord}s` : `最佳纪录: ${bestRecord}s`;
+            
+            const nextInfo = config[currentDifficulty];
+            const nextBtn = document.getElementById('next-level-btn');
+            if (nextInfo.next) {
+                nextBtn.style.display = 'flex';
+                nextBtn.textContent = `挑战${nextInfo.label}模式`;
+            } else {
+                nextBtn.style.display = 'none';
+            }
+        }, 800);
+    }
+
+    function restartCurrent() {
+        backToDifficulty();
+        selectDifficulty(currentDifficulty);
+    }
+
+    function goNextLevel() {
+        const next = config[currentDifficulty].next;
+        backToDifficulty();
+        selectDifficulty(next);
+    }
+
+    function backToDifficulty() {
+        clearInterval(timerInterval); 
+        document.getElementById('modal-wrap').style.display = 'none';
+        document.getElementById('overlay-start').style.display = 'none'; 
+        
+        document.getElementById('difficulty-page').style.display = 'flex';
+        document.getElementById('game-page').style.display = 'none';
+        document.getElementById('back-btn').style.display = 'none';
+        
+        document.getElementById('stats-area').style.visibility = 'hidden';
+        gameHint.style.visibility = 'hidden';
+        legendContainer.style.visibility = 'hidden';
+        sequenceBar.style.visibility = 'hidden';
+        
+        timerDisplay.textContent = `用时：0.0s`;
+        board.innerHTML = ''; 
+        linesGroup.innerHTML = ''; 
+    }
+
+    document.addEventListener('click', initAudio, { once: true });
+</script>
+</body>
+</html>
